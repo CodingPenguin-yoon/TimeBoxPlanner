@@ -1,0 +1,41 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// 플래너 데이터 (날짜별)
+model Planner {
+  id        String   @id @default(cuid())
+  date      String   @unique // YYYY-MM-DD 형식
+  notes     String?  // 시간 관리 메모
+  reflection String? // 반성/회고
+  tasks     Task[]   // 할일 목록
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("planners")
+}
+
+// 할일 (타임박스 아이템)
+model Task {
+  id                 String  @id @default(cuid())
+  plannerId          String
+  planner            Planner @relation(fields: [plannerId], references: [id], onDelete: Cascade)
+  title              String  @default("")
+  timeSpan           Int     @default(30) // 소요 시간 (분 단위)
+  isBig3             Boolean @default(false) // 빅3 선택 여부
+  scheduledStartHour Int?    // 타임테이블 시작 시간 (0-23)
+  scheduledStartMinute Int?  // 타임테이블 시작 분 (0, 30)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@map("tasks")
+  @@index([plannerId])
+}
