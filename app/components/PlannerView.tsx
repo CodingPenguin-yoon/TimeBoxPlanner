@@ -1,6 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import { usePlanner } from "./usePlanner";
+import { PlannerApiError } from "@/lib/storage";
 import { CalendarWidget } from "./CalendarWidget";
 import { BackToToday } from "./BackToToday";
 import { TimeTable } from "./TimeTable";
@@ -8,10 +10,6 @@ import { format } from "date-fns";
 import { ko } from "date-fns/locale";
 import { formatDateToISO } from "@/lib/utils";
 import {
-  getPlannerDataByDate,
-  savePlannerData,
-  createEmptyPlannerData,
-  type PlannerData,
   type TimeboxItem,
 } from "@/lib/storage";
 import { Button } from "@/components/ui/button";
@@ -30,51 +28,16 @@ interface PlannerViewProps {
  * - 데이터가 없으면 빈 플래너 표시
  */
 export function PlannerView({ date }: PlannerViewProps) {
-  const [plannerData, setPlannerData] = useState<PlannerData | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const { plannerData, isLoading, isSaving, error, update: setPlannerData, retry } = usePlanner(formatDateToISO(date));
   const [draggedTask, setDraggedTask] = useState<string | null>(null);
   const [draggedTaskIndex, setDraggedTaskIndex] = useState<number | null>(null);
   const [dragOverTaskIndex, setDragOverTaskIndex] = useState<number | null>(null);
-
-  useEffect(() => {
-    // 날짜가 변경될 때마다 API에서 데이터 로드
-    const loadData = async () => {
-      setIsLoading(true);
-
-      try {
-        const dateISO = formatDateToISO(date);
-        const data = await getPlannerDataByDate(dateISO);
-        // 데이터가 없으면 빈 플래너 데이터 생성
-        setPlannerData(data || createEmptyPlannerData());
-      } catch (error) {
-        console.error("Error loading planner data:", error);
-        setPlannerData(createEmptyPlannerData());
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    loadData();
-  }, [date]);
-
-
-  // 데이터 저장 함수 (자동 저장)
-  const handleSave = async () => {
-    if (!plannerData) return;
-
-    try {
-      const dateISO = formatDateToISO(date);
-      await savePlannerData(dateISO, plannerData);
-    } catch (error) {
-      console.error("Error saving planner data:", error);
-    }
-  };
 
   // 할일 추가
   const addTask = () => {
     if (!plannerData) return;
     const newTask: TimeboxItem = {
-      id: Date.now().toString(),
+      id: crypto.randomUUID(),
       title: "",
       timeSpan: 60, // 기본 1시간 (1시간 단위)
       isBig3: false,
@@ -83,7 +46,6 @@ export function PlannerView({ date }: PlannerViewProps) {
       ...plannerData,
       tasks: [...plannerData.tasks, newTask],
     });
-    handleSave();
   };
 
   // 할일 업데이트
@@ -93,7 +55,6 @@ export function PlannerView({ date }: PlannerViewProps) {
       task.id === id ? { ...task, [field]: value } : task
     );
     setPlannerData({ ...plannerData, tasks: newTasks });
-    handleSave();
   };
 
   // 할일 삭제
@@ -101,7 +62,6 @@ export function PlannerView({ date }: PlannerViewProps) {
     if (!plannerData) return;
     const newTasks = plannerData.tasks.filter((task) => task.id !== id);
     setPlannerData({ ...plannerData, tasks: newTasks });
-    handleSave();
   };
 
   // 타임테이블에 할일 드롭
@@ -113,7 +73,6 @@ export function PlannerView({ date }: PlannerViewProps) {
         : task
     );
     setPlannerData({ ...plannerData, tasks: newTasks });
-    handleSave();
   };
 
   // 타임테이블에서 할일 제거
@@ -123,7 +82,6 @@ export function PlannerView({ date }: PlannerViewProps) {
       task.id === taskId ? { ...task, scheduledTime: undefined } : task
     );
     setPlannerData({ ...plannerData, tasks: newTasks });
-    handleSave();
   };
 
   // 빅3 체크 (최대 3개)
@@ -197,7 +155,6 @@ export function PlannerView({ date }: PlannerViewProps) {
     newTasks.splice(newDropIndex, 0, draggedTask);
 
     setPlannerData({ ...plannerData, tasks: newTasks });
-    handleSave();
     setDragOverTaskIndex(null);
   };
 
@@ -222,7 +179,9 @@ export function PlannerView({ date }: PlannerViewProps) {
   if (!plannerData) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center p-8">
-        <div className="text-lg text-muted-foreground">데이터를 불러올 수 없습니다.</div>
+        <div role="alert" className="text-lg text-muted-foreground">{error?.message ?? "데이터를 불러올 수 없습니다."}</div>
+        <button className="mt-4 underline" onClick={() => window.location.reload()}>다시 불러오기</button>
+        {error instanceof PlannerApiError && error.status === 401 && <a href="/login" className="mt-4 underline">다시 로그인</a>}
       </div>
     );
   }
@@ -230,14 +189,13 @@ export function PlannerView({ date }: PlannerViewProps) {
   // 빅3로 선택된 할일들
   const big3Tasks = plannerData.tasks.filter((t) => t.isBig3);
   // 타임테이블에 배치되지 않은 할일들
-  const unscheduledTasks = plannerData.tasks.filter((t) => !t.scheduledTime);
   // 타임테이블에 배치된 할일들
   const scheduledTasks = plannerData.tasks.filter((t) => t.scheduledTime);
 
   return (
     <div>
       {/* Back to Today 버튼 */}
-      <BackToToday currentDate={date} />
+      <div inert={isSaving || Boolean(error)}><BackToToday currentDate={date} /></div>
 
       {/* 헤더 */}
       <header className="border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
@@ -246,13 +204,23 @@ export function PlannerView({ date }: PlannerViewProps) {
             {format(date, "yyyy년 MM월 dd일 (EEE)", { locale: ko })}
           </h1>
           <div className="flex items-center gap-2">
-            <CalendarWidget selectedDate={date} />
+            <span role="status" className="text-xs text-muted-foreground">{error ? "저장 실패" : isSaving ? "저장 중…" : "저장됨"}</span>
+            <div inert={isSaving || Boolean(error)}><CalendarWidget selectedDate={date} /></div>
           </div>
         </div>
       </header>
 
+      {error && <div role="alert" className="m-4 rounded-md border border-destructive p-3 text-sm">
+        <p>{error.message} 입력한 내용은 이 화면에 남아 있습니다.</p>
+        <div className="mt-2 flex gap-4">
+          {!(error instanceof PlannerApiError && [401, 409].includes(error.status)) && <button onClick={retry} className="underline">저장 재시도</button>}
+          {error instanceof PlannerApiError && error.status === 401 && <a href="/login" target="_blank" rel="noreferrer" className="underline">새 탭에서 로그인</a>}
+          {error instanceof PlannerApiError && error.status === 401 && <button onClick={retry} className="underline">로그인 후 저장 재시도</button>}
+          <button onClick={() => { if (window.confirm("저장되지 않은 변경을 버리고 다시 불러올까요?")) window.location.reload(); }} className="underline">최신 기록 다시 불러오기</button>
+        </div>
+      </div>}
       {/* 메인 컨텐츠 - 좌우 2단 레이아웃, 페이지 전체 스크롤 */}
-      <main className="container p-4 gap-4 flex">
+      <main><fieldset disabled={Boolean(error)} className="container p-4 gap-4 flex">
         {/* 왼쪽: 할일 목록 - sticky로 고정, 화면 높이에 맞춤 */}
         <div className="flex-1 flex flex-col sticky top-4 self-start max-h-[calc(100vh-5rem)]">
           {/* 빅3 섹션 */}
@@ -362,7 +330,7 @@ export function PlannerView({ date }: PlannerViewProps) {
             onTaskRemove={handleTaskRemoveFromTable}
           />
         </div>
-      </main>
+      </fieldset></main>
     </div>
   );
 }

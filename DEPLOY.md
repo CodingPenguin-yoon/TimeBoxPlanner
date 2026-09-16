@@ -1,141 +1,81 @@
-# 배포 가이드
+# PostgreSQL + Google 로그인 배포
 
-## 📋 필요한 파일
+## Heimdall 서비스 설정
 
-1. **Dockerfile** - 서비스 이미지 빌드용 ✅
-2. **docker-compose.yml** - 컨테이너 오케스트레이션 ✅
-3. **DB 설정 2가지**:
-   - DATABASE_URL 환경변수 (docker-compose.yml에 설정됨)
-   - DB 파일 볼륨 마운트 (`./data:/app/data`)
+[Heimdall](https://github.com/CodingPenguin-yoon/heimdall_final)의 프로젝트 설정에서 다음 값을 사용합니다.
 
-## 🚀 배포 방법
+| 항목 | 값 |
+| --- | --- |
+| 서비스 이름 | `app` |
+| Build context | `.` |
+| Dockerfile | `Dockerfile` |
+| Internal port | `3000` |
+| Health path | `/api/health` |
+| Project database access | 활성화 (`true`) |
+| Route | `/` → `app` |
 
-### 방법 1: Docker Compose 사용 (권장)
+프로젝트 DB를 생성하고 상태가 `ACTIVE`인지 확인합니다. 배포마다 바뀌지 않는 HTTPS hostname을 설정하세요. OAuth는 이 주소를 기준으로 동작합니다. `main`에 코드를 push한 뒤 해당 commit으로 배포합니다.
 
-```bash
-# 1. DB 디렉토리 생성 (호스트에 자동 생성되지 않으므로 필요)
-mkdir -p ./data
+Heimdall은 `DATABASE_HOST`, `DATABASE_PORT`, `DATABASE_NAME`, `DATABASE_USER`, `DATABASE_SCHEMA`, `DATABASE_PASSWORD_FILE`을 주입합니다. `DATABASE_*`는 예약 변수이므로 직접 추가하지 않습니다. 시작 스크립트가 비밀번호 파일을 읽고 URL 인코딩하여 Prisma용 `DATABASE_URL`을 구성합니다.
 
-# 2. 이미지 빌드 및 실행
-docker-compose up -d --build
+### 환경변수
 
-# 3. 로그 확인
-docker-compose logs -f
+| 이름 | 종류 | 값 |
+| --- | --- | --- |
+| `AUTH_URL` | PLAIN | `https://실제-서비스-도메인` (경로 없이) |
+| `AUTH_TRUST_HOST` | PLAIN | `true` |
+| `AUTH_REGISTRATION` | PLAIN | `open` — 누구나 Google 로그인 가능 |
+| `AUTH_GOOGLE_ID` | PLAIN | Google OAuth client ID |
+| `AUTH_GOOGLE_SECRET` | SECRET | Google OAuth client secret |
+| `AUTH_SECRET` | SECRET | `openssl rand -base64 32`로 생성한 고정 값 |
 
-# 4. 서비스 접속
-# 브라우저에서 http://localhost:3000 접속
+Heimdall의 SECRET 값은 컨테이너에서 `/run/secrets/...` 파일 경로가 됩니다. `scripts/runtime-env.mjs`가 파일 내용으로 변환합니다. 일반 호스팅의 직접 환경변수와 `AUTH_SECRET_FILE` 같은 `_FILE` 방식도 지원합니다. 비밀값은 로그나 이미지에 넣지 않습니다. Heimdall의 root 소유 0400 파일을 읽기 위해 시작 스크립트만 root로 시작하고, 파일을 읽은 뒤 UID/GID 1001로 권한을 낮춰 마이그레이션과 서버를 실행합니다.
+
+`AUTH_SECRET`은 재배포마다 바꾸지 않습니다. 임시로 가입을 제한하려면 `AUTH_REGISTRATION=allowlist`, `AUTH_ALLOWED_EMAILS=owner@example.com,friend@example.com`을 설정합니다. 목록에서 제거하면 기존 세션도 플래너에 접근할 수 없습니다. 설정 누락 시에는 기본적으로 허용 목록 정책을 적용합니다.
+
+신뢰할 수 있는 Heimdall gateway를 통해서만 앱에 접근하도록 운영합니다. `AUTH_URL`의 외부 HTTPS 주소를 정확히 설정하면 내부 HTTP 프록시에서도 Google callback과 secure cookie가 외부 주소를 기준으로 만들어집니다.
+
+## Google OAuth 설정
+
+Google Cloud Console에서 OAuth 동의 화면과 **웹 애플리케이션** 클라이언트를 생성합니다.
+
+- 승인된 JavaScript 원본: `https://실제-서비스-도메인`
+- 승인된 리디렉션 URI: `https://실제-서비스-도메인/api/auth/callback/google`
+- 로컬 개발용 원본: `http://localhost:3000`
+- 로컬 callback: `http://localhost:3000/api/auth/callback/google`
+
+외부 사용자에게 개방하려면 Google 동의 화면도 실제 외부 사용자 로그인이 가능한 게시 상태로 설정해야 합니다. Testing 상태에서는 등록한 테스트 사용자만 로그인할 수 있습니다. 앱은 Google이 검증한 이메일만 받아 계정을 만듭니다.
+
+## DB 마이그레이션과 배포 확인
+
+컨테이너는 설정 검증 → `prisma migrate deploy` → 서버 실행 순서로 시작합니다. 설정이나 마이그레이션이 실패하면 서버를 실행하지 않습니다. `/api/health`는 DB 연결을 확인하고 성공 시 200, 실패 시 503을 반환합니다.
+
+새 PostgreSQL DB에서 시작합니다. `prisma/migrations/`에는 테이블을 만드는 초기 스키마만 포함되어 있습니다.
+
+배포 후 확인:
+
+1. `/api/health`가 200을 반환하는지 확인.
+2. 로그아웃 상태에서 `/`는 로그인 화면으로 이동, `/api/planner`는 401인지 확인.
+3. Google 로그인 후 할 일 작성 → 새로고침 → 같은 ID와 내용이 유지되는지 확인.
+4. 두 계정으로 같은 날짜를 열어 데이터가 섞이지 않는지 확인.
+5. 로그아웃 후 API 접근이 차단되는지 확인.
+
+Heimdall은 새 candidate가 기존 버전과 같은 DB를 사용하므로, 이후 스키마 변경은 구버전과 호환되도록 추가 후 전환하는 방식으로 진행합니다. 앱 버전 롤백은 DB 스키마 롤백을 의미하지 않습니다.
+
+## PostgreSQL 백업
+
+앱 컨테이너가 아닌 Heimdall managed PostgreSQL의 영속 볼륨과 DB를 백업합니다. DB 접근이 가능한 관리 환경에서 접속 정보를 환경변수로 주입하고:
+
+```sh
+pg_dump --format=custom --file=backups/timebox.dump
+# 별도로 만든 빈 복원 검증용 DB를 PGDATABASE에 지정한 뒤
+pg_restore --no-owner --no-privileges --dbname="$PGDATABASE" backups/timebox.dump
 ```
 
-### 방법 2: Docker 직접 사용
+`PGHOST`, `PGPORT`, `PGUSER`, `PGDATABASE`, `PGPASSFILE`을 관리 환경에 설정합니다. 스케줄러에서 매일 백업하고, 운영 정책에 맞는 보존 기간과 주기적인 별도 DB 복원 검증을 설정하세요. 저장소 변경만으로 운영 서버의 백업 스케줄이 만들어지지는 않습니다.
 
-```bash
-# 1. DB 디렉토리 생성
-mkdir -p ./data
+## 구현 참고
 
-# 2. 이미지 빌드
-docker build -t tmplanner:latest .
-
-# 3. 컨테이너 실행
-docker run -d \
-  -p 3000:3000 \
-  -e DATABASE_URL=file:/app/data/prod.db \
-  -e NODE_ENV=production \
-  -v $(pwd)/data:/app/data \
-  --name tmplanner \
-  --restart unless-stopped \
-  tmplanner:latest
-
-# 4. 로그 확인
-docker logs -f tmplanner
-```
-
-## ⚙️ 환경변수 설정
-
-### docker-compose.yml (프로덕션)
-```yaml
-environment:
-  - NODE_ENV=production
-  - DATABASE_URL=file:/app/data/prod.db
-```
-
-### .env 파일 (로컬 개발 - 선택사항)
-```
-DATABASE_URL=file:./dev.db
-```
-
-## 💾 DB 설정 요약
-
-### 1. DATABASE_URL 환경변수
-- **로컬 개발**: `file:./dev.db`
-- **프로덕션 (Docker)**: `file:/app/data/prod.db`
-
-### 2. 볼륨 마운트
-- **설정**: `./data:/app/data` (docker-compose.yml)
-- **목적**: DB 파일(`prod.db`)을 호스트에 저장하여 데이터 영속성 보장
-- **위치**: 프로젝트 루트의 `./data` 디렉토리
-
-## 🔄 초기 마이그레이션
-
-컨테이너 시작 시 자동으로 `prisma migrate deploy`가 실행되어 DB 테이블이 생성됩니다.
-
-## 📦 SQLite DB 특징
-
-- ✅ **별도의 DB 컨테이너 불필요**: SQLite는 파일 기반이므로 DB 이미지/컨테이너가 필요 없습니다
-- ✅ **단일 컨테이너**: 앱 컨테이너 하나만으로 충분합니다
-- ✅ **볼륨 마운트**: DB 파일을 호스트에 저장하여 컨테이너 재시작 시에도 데이터 유지
-
-## 🔧 유용한 명령어
-
-```bash
-# 컨테이너 중지
-docker-compose down
-
-# 컨테이너 재시작
-docker-compose restart
-
-# 로그 확인
-docker-compose logs -f app
-
-# 컨테이너 내부 접속
-docker-compose exec app sh
-
-# 이미지 재빌드
-docker-compose build --no-cache
-```
-
-## 💾 데이터 백업
-
-DB 파일은 `./data/prod.db`에 저장되므로, 이 파일을 정기적으로 백업하세요:
-
-```bash
-# 백업
-cp ./data/prod.db ./data/prod.db.backup
-
-# 복원
-cp ./data/prod.db.backup ./data/prod.db
-```
-
-## 🐛 문제 해결
-
-### 컨테이너가 시작되지 않는 경우
-```bash
-# 로그 확인
-docker-compose logs app
-
-# 컨테이너 상태 확인
-docker-compose ps
-```
-
-### DB 마이그레이션 오류
-```bash
-# 컨테이너 내부에서 수동 마이그레이션
-docker-compose exec app prisma migrate deploy
-```
-
-### 포트 충돌
-```bash
-# docker-compose.yml에서 포트 변경
-ports:
-  - "3001:3000"  # 호스트:컨테이너
-```
-
+- [Auth.js Prisma adapter](https://authjs.dev/getting-started/adapters/prisma)
+- [Auth.js deployment](https://authjs.dev/getting-started/deployment)
+- [Auth.js Google provider](https://authjs.dev/getting-started/providers/google)

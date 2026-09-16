@@ -1,152 +1,77 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db";
-import type { PlannerData, TimeboxItem } from "@/lib/storage";
+import { currentUser } from "@/auth";
+import { dateSchema, savePlannerSchema } from "@/lib/planner-validation";
+import { clearPlanner, PlannerConflict, readPlanner, writePlanner } from "@/lib/planner-service";
 
-/**
- * GET /api/planner?date=YYYY-MM-DD
- * 특정 날짜의 플래너 데이터 조회
- */
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+const MAX_BODY_BYTES = 1024 * 1024;
+const json = (body: unknown, status = 200) => NextResponse.json(body, {
+  status, headers: { "Cache-Control": "private, no-store" },
+});
+
+function sameOrigin(request: NextRequest) {
+  // Explicit public URL avoids trusting forwarded host headers for our write API.
+  const origin = request.headers.get("origin");
+  const expected = process.env.AUTH_URL || (process.env.NODE_ENV !== "production" ? request.url : "");
+  if (!origin || !expected) return false;
+  try { return new URL(origin).origin === new URL(expected).origin; } catch { return false; }
+}
+
+function failure(error: unknown) {
+  if (error instanceof PlannerConflict) return json({ error: "다른 곳에서 기록이 변경되었습니다. 새로고침 후 다시 시도해 주세요." }, 409);
+  console.error("Planner request failed", error instanceof Error ? error.name : "UnknownError");
+  return json({ error: "요청을 처리하지 못했습니다. 다시 시도해 주세요." }, 500);
+}
+
 export async function GET(request: NextRequest) {
   try {
-    const searchParams = request.nextUrl.searchParams;
-    const date = searchParams.get("date");
-
-    if (!date) {
-      return NextResponse.json(
-        { error: "Date parameter is required" },
-        { status: 400 }
-      );
-    }
-
-    // DB에서 플래너 데이터 조회
-    const planner = await prisma.planner.findUnique({
-      where: { date },
-      include: { tasks: true },
-    });
-
-    if (!planner) {
-      return NextResponse.json(null);
-    }
-
-    // PlannerData 형식으로 변환
-    const plannerData: PlannerData = {
-      tasks: planner.tasks.map((task) => ({
-        id: task.id,
-        title: task.title,
-        timeSpan: task.timeSpan,
-        isBig3: task.isBig3,
-        scheduledTime:
-          task.scheduledStartHour !== null && task.scheduledStartMinute !== null
-            ? {
-                startHour: task.scheduledStartHour,
-                startMinute: task.scheduledStartMinute,
-              }
-            : undefined,
-      })),
-      todayTime: {
-        notes: planner.notes || undefined,
-        reflection: planner.reflection || undefined,
-      },
-    };
-
-    return NextResponse.json(plannerData);
-  } catch (error) {
-    console.error("Error fetching planner data:", error);
-    // 에러 상세 정보를 로그에 출력하고 클라이언트에도 전달
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    console.error("Error details:", errorMessage);
-    return NextResponse.json(
-      { error: "Failed to fetch planner data", details: errorMessage },
-      { status: 500 }
-    );
-  }
+    const user = await currentUser();
+    if (!user) return json({ error: "로그인이 필요합니다." }, 401);
+    const date = dateSchema.safeParse(request.nextUrl.searchParams.get("date"));
+    if (!date.success) return json({ error: "날짜 형식이 잘못되었습니다." }, 400);
+    return json({ ...await readPlanner(user.id, date.data), ownerId: user.id });
+  } catch (error) { return failure(error); }
 }
 
-/**
- * POST /api/planner
- * 플래너 데이터 저장/업데이트
- */
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
-    const { date, data }: { date: string; data: PlannerData } = body;
-
-    if (!date || !data) {
-      return NextResponse.json(
-        { error: "Date and data are required" },
-        { status: 400 }
-      );
+    const user = await currentUser();
+    if (!user) return json({ error: "로그인이 필요합니다." }, 401);
+    if (!sameOrigin(request)) return json({ error: "허용되지 않은 요청입니다." }, 403);
+    if (!request.headers.get("content-type")?.startsWith("application/json")) return json({ error: "JSON 요청이 필요합니다." }, 415);
+    const reader = request.body?.getReader();
+    if (!reader) return json({ error: "요청 본문이 필요합니다." }, 400);
+    const chunks: Uint8Array[] = [];
+    let size = 0;
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > MAX_BODY_BYTES) { await reader.cancel(); return json({ error: "요청이 너무 큽니다." }, 413); }
+      chunks.push(value);
     }
-
-    // Upsert: 플래너가 있으면 업데이트, 없으면 생성
-    const planner = await prisma.planner.upsert({
-      where: { date },
-      update: {
-        notes: data.todayTime.notes || null,
-        reflection: data.todayTime.reflection || null,
-        updatedAt: new Date(),
-      },
-      create: {
-        date,
-        notes: data.todayTime.notes || null,
-        reflection: data.todayTime.reflection || null,
-      },
-    });
-
-    // 기존 Task 삭제 후 재생성 (간단한 동기화 방식)
-    await prisma.task.deleteMany({
-      where: { plannerId: planner.id },
-    });
-
-    // 새 Task 생성
-    await prisma.task.createMany({
-      data: data.tasks.map((task) => ({
-        plannerId: planner.id,
-        title: task.title,
-        timeSpan: task.timeSpan,
-        isBig3: task.isBig3,
-        scheduledStartHour: task.scheduledTime?.startHour ?? null,
-        scheduledStartMinute: task.scheduledTime?.startMinute ?? null,
-      })),
-    });
-
-    return NextResponse.json({ success: true });
-  } catch (error) {
-    console.error("Error saving planner data:", error);
-    return NextResponse.json(
-      { error: "Failed to save planner data" },
-      { status: 500 }
-    );
-  }
+    let body: unknown;
+    try { body = JSON.parse(Buffer.concat(chunks).toString("utf8")); }
+    catch { return json({ error: "JSON 형식이 잘못되었습니다." }, 400); }
+    const parsed = savePlannerSchema.safeParse(body);
+    if (!parsed.success) return json({ error: "플래너 입력값을 확인해 주세요." }, 400);
+    if (parsed.data.ownerId !== user.id) return json({ error: "로그인 계정이 변경되었습니다. 새로고침해 주세요." }, 409);
+    const { date, data, revision } = parsed.data;
+    return json({ revision: await writePlanner(user.id, date, data, revision) });
+  } catch (error) { return failure(error); }
 }
 
-/**
- * DELETE /api/planner?date=YYYY-MM-DD
- * 특정 날짜의 플래너 데이터 삭제
- */
 export async function DELETE(request: NextRequest) {
   try {
-    const searchParams = request.nextUrl.searchParams;
-    const date = searchParams.get("date");
-
-    if (!date) {
-      return NextResponse.json(
-        { error: "Date parameter is required" },
-        { status: 400 }
-      );
-    }
-
-    await prisma.planner.delete({
-      where: { date },
-    });
-
-    return NextResponse.json({ success: true });
-  } catch (error) {
-    console.error("Error deleting planner data:", error);
-    return NextResponse.json(
-      { error: "Failed to delete planner data" },
-      { status: 500 }
-    );
-  }
+    const user = await currentUser();
+    if (!user) return json({ error: "로그인이 필요합니다." }, 401);
+    if (!sameOrigin(request)) return json({ error: "허용되지 않은 요청입니다." }, 403);
+    const date = dateSchema.safeParse(request.nextUrl.searchParams.get("date"));
+    if (request.nextUrl.searchParams.get("ownerId") !== user.id) return json({ error: "로그인 계정이 변경되었습니다. 새로고침해 주세요." }, 409);
+    const rawRevision = request.nextUrl.searchParams.get("revision");
+    const revision = Number(rawRevision);
+    if (!date.success || rawRevision === null || !/^\d+$/.test(rawRevision) || !Number.isSafeInteger(revision)) return json({ error: "날짜와 버전을 확인해 주세요." }, 400);
+    return json({ revision: await clearPlanner(user.id, date.data, revision) });
+  } catch (error) { return failure(error); }
 }
-

@@ -1,24 +1,20 @@
-version: '3.8'
-
+# Local development database. Heimdall supplies its own managed PostgreSQL.
 services:
-  app:
-    # Docker Hub에서 이미지 사용
-    image: codingpenguinyoon1081/tmplanner:latest
-    # 로컬에서 빌드하려면 아래 주석 해제하고 image 라인 주석 처리
-    # build:
-    #   context: .
-    #   dockerfile: Dockerfile
-    container_name: tmplanner
+  db:
+    image: postgres:17-alpine
     ports:
-      - "0.0.0.0:3000:3000"  # 모든 네트워크 인터페이스에서 접속 허용
+      - "127.0.0.1:5432:5432"
     environment:
-      - NODE_ENV=production
-      - DATABASE_URL=file:/app/data/prod.db
+      POSTGRES_USER: timebox
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: timebox
     volumes:
-      # DB 파일 영속성을 위한 볼륨 마운트
-      - ./data:/app/data
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U timebox -d timebox"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
     restart: unless-stopped
-    # 권한 문제 해결: nextjs 사용자(UID 1001)로 실행
-    # 호스트에서 mkdir -p ./data && sudo chown -R 1001:1001 ./data 실행 필요
-    user: "1001:1001"
-
+volumes:
+  postgres-data:

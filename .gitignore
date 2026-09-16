@@ -48,3 +48,6 @@ next-env.d.ts
 *.db
 *.db-journal
 dev.db
+
+!.env.example
+/backups/

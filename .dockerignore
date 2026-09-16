@@ -22,3 +22,7 @@ coverage
 *.tsbuildinfo
 
 
+
+.env*
+backups
+tests

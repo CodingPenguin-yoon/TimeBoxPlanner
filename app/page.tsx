@@ -2,6 +2,9 @@ import { Suspense } from "react";
 import { PlannerView } from "./components/PlannerView";
 import { parseDateFromISO } from "@/lib/utils";
 import { isValid } from "date-fns";
+import { currentUser } from "@/auth";
+import { redirect } from "next/navigation";
+import { AccountMenu } from "./components/AccountMenu";
 
 interface PageProps {
   searchParams: Promise<{ date?: string }>;
@@ -11,9 +14,11 @@ interface PageProps {
  * 메인 페이지 컴포넌트
  * - searchParams에서 date 쿼리 파라미터 읽기
  * - 기본값: 오늘 날짜 (date 파라미터가 없을 때)
- * - 날짜별 플래너 데이터는 클라이언트에서 localStorage에서 로드
+ * - 로그인한 사용자의 날짜별 플래너를 API에서 로드
  */
 export default async function Home({ searchParams }: PageProps) {
+  const user = await currentUser();
+  if (!user) redirect("/login");
   // searchParams가 Promise이므로 await 필요
   const params = await searchParams;
   const dateParam = params?.date;
@@ -41,7 +46,8 @@ export default async function Home({ searchParams }: PageProps) {
         </div>
       }
     >
-      <PlannerView date={selectedDate} />
+      <AccountMenu email={user.email} />
+      <PlannerView key={`${user.id}:${dateParam ?? "today"}`} date={selectedDate} />
     </Suspense>
   );
 }

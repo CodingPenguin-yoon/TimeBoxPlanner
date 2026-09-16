@@ -1,41 +1,90 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
 generator client {
   provider      = "prisma-client-js"
   binaryTargets = ["native", "linux-musl-arm64-openssl-3.0.x", "linux-musl-openssl-3.0.x"]
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
-// 플래너 데이터 (날짜별)
-model Planner {
-  id        String   @id @default(cuid())
-  date      String   @unique // YYYY-MM-DD 형식
-  notes     String?  // 시간 관리 메모
-  reflection String? // 반성/회고
-  tasks     Task[]   // 할일 목록
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String?   @unique
+  emailVerified DateTime?
+  image         String?
+  accounts      Account[]
+  sessions      Session[]
+  planners      Planner[]
+  createdAt     DateTime  @default(now())
+}
 
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+model Planner {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  date       String
+  notes      String?
+  reflection String?
+  revision   Int      @default(0)
+  tasks      Task[]
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([userId, date])
   @@map("planners")
 }
 
-// 할일 (타임박스 아이템)
 model Task {
-  id                 String  @id @default(cuid())
-  plannerId          String
-  planner            Planner @relation(fields: [plannerId], references: [id], onDelete: Cascade)
-  title              String  @default("")
-  timeSpan           Int     @default(30) // 소요 시간 (분 단위)
-  isBig3             Boolean @default(false) // 빅3 선택 여부
-  scheduledStartHour Int?    // 타임테이블 시작 시간 (0-23)
-  scheduledStartMinute Int?  // 타임테이블 시작 분 (0, 30)
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
+  id                   String   @id @default(cuid())
+  plannerId            String
+  planner              Planner  @relation(fields: [plannerId], references: [id], onDelete: Cascade)
+  title                String   @default("")
+  timeSpan             Int      @default(30)
+  isBig3               Boolean  @default(false)
+  scheduledStartHour   Int?
+  scheduledStartMinute Int?
+  position             Int      @default(0)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
 
   @@map("tasks")
   @@index([plannerId])
