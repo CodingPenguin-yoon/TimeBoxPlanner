@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { mkdtempSync, mkdirSync, copyFileSync, writeFileSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, copyFileSync, readdirSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
@@ -18,9 +18,11 @@ test("migration runner preserves Prisma history, serializes retries and rolls fa
   const schema = `schema_${suffix}`;
   const fresh = `fresh_${suffix}`;
   const directory = mkdtempSync(join(tmpdir(), "timebox-migrations-"));
-  const migration = "20260916000000_postgres_accounts";
-  mkdirSync(join(directory, migration));
-  copyFileSync(`prisma/migrations/${migration}/migration.sql`, join(directory, migration, "migration.sql"));
+  const migrations = readdirSync("prisma/migrations", { withFileTypes: true }).filter((entry) => entry.isDirectory());
+  for (const migration of migrations) {
+    mkdirSync(join(directory, migration.name));
+    copyFileSync(`prisma/migrations/${migration.name}/migration.sql`, join(directory, migration.name, "migration.sql"));
+  }
   const url = new URL(adminUrl);
   url.username = role;
   url.password = "local-migration-test-password";
@@ -45,14 +47,14 @@ test("migration runner preserves Prisma history, serializes retries and rolls fa
     execFileSync(process.execPath, ["node_modules/prisma/build/index.js", "migrate", "deploy"], {
       env: { ...process.env, ...env }, stdio: "pipe",
     });
-    assert.deepEqual(await runMigrations({ env: staleEnv, directory, log }), { applied: 0, existing: 1 });
+    assert.deepEqual(await runMigrations({ env: staleEnv, directory, log }), { applied: 0, existing: migrations.length });
     const app = new PrismaClient({ datasourceUrl: resolved.DATABASE_URL });
     try { assert.deepEqual(await app.account.findMany(), []); } finally { await app.$disconnect(); }
     const results = await Promise.all([
       runMigrations({ env: { ...env, DATABASE_SCHEMA: fresh }, directory, log }),
       runMigrations({ env: { ...env, DATABASE_SCHEMA: fresh }, directory, log }),
     ]);
-    assert.equal(results.reduce((sum, value) => sum + value.applied, 0), 1);
+    assert.equal(results.reduce((sum, value) => sum + value.applied, 0), migrations.length);
     mkdirSync(join(directory, "20260917000000_probe"));
     writeFileSync(join(directory, "20260917000000_probe/migration.sql"), 'CREATE TABLE "MigrationProbe" (id INTEGER);');
     mkdirSync(join(directory, "20260918000000_bad"));
@@ -61,7 +63,7 @@ test("migration runner preserves Prisma history, serializes retries and rolls fa
     const tables = await admin.$queryRawUnsafe<Array<{ count: bigint }>>(`SELECT count(*) FROM pg_tables WHERE schemaname = '${schema}' AND tablename IN ('MigrationProbe', 'RolledBackProbe')`);
     assert.equal(tables[0].count, BigInt(0));
     rmSync(join(directory, "20260918000000_bad"), { recursive: true });
-    assert.deepEqual(await runMigrations({ env, directory, log }), { applied: 1, existing: 1 });
+    assert.deepEqual(await runMigrations({ env, directory, log }), { applied: 1, existing: migrations.length });
     writeFileSync(join(directory, "20260917000000_probe/migration.sql"), '-- modified after application');
     await assert.rejects(runMigrations({ env, directory, log }), /differs from this release/);
   } finally {

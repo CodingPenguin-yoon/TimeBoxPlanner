@@ -1,4 +1,5 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
+import { json, sameOrigin } from "@/lib/planner-http";
 import { currentUser } from "@/auth";
 import { dateSchema, savePlannerSchema } from "@/lib/planner-validation";
 import { clearPlanner, PlannerConflict, readPlanner, writePlanner } from "@/lib/planner-service";
@@ -6,18 +7,6 @@ import { clearPlanner, PlannerConflict, readPlanner, writePlanner } from "@/lib/
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 const MAX_BODY_BYTES = 1024 * 1024;
-const json = (body: unknown, status = 200) => NextResponse.json(body, {
-  status, headers: { "Cache-Control": "private, no-store" },
-});
-
-function sameOrigin(request: NextRequest) {
-  // Explicit public URL avoids trusting forwarded host headers for our write API.
-  const origin = request.headers.get("origin");
-  const expected = process.env.AUTH_URL || (process.env.NODE_ENV !== "production" ? request.url : "");
-  if (!origin || !expected) return false;
-  try { return new URL(origin).origin === new URL(expected).origin; } catch { return false; }
-}
-
 function failure(error: unknown) {
   if (error instanceof PlannerConflict) return json({ error: "다른 곳에서 기록이 변경되었습니다. 새로고침 후 다시 시도해 주세요." }, 409);
   console.error("Planner request failed", error instanceof Error ? error.name : "UnknownError");

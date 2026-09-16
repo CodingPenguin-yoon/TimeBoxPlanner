@@ -11,6 +11,7 @@ export const plannerDataSchema = z.object({
     title: z.string().max(2000),
     timeSpan: z.number().int().min(1).max(1440),
     isBig3: z.boolean(),
+    completed: z.boolean().optional(),
     scheduledTime: z.object({
       startHour: z.number().int().min(0).max(23),
       startMinute: z.number().int().min(0).max(59),
@@ -29,4 +30,11 @@ export const savePlannerSchema = z.object({
   date: dateSchema,
   revision: z.number().int().nonnegative(),
   data: plannerDataSchema,
+});
+
+export const movePlannerSchema = z.object({
+  ownerId: z.string().min(1),
+  date: dateSchema.refine((date) => date < "9999-12-31", "다음 날로 이동할 수 없는 날짜입니다."),
+  taskId: z.string().min(1).max(128).regex(/^[a-zA-Z0-9_-]+$/),
+  revision: z.number().int().nonnegative(),
 });

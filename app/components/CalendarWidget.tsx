@@ -15,6 +15,7 @@ import { format } from "date-fns";
 
 interface CalendarWidgetProps {
   selectedDate: Date;
+  basePath?: string;
 }
 
 /**
@@ -23,7 +24,7 @@ interface CalendarWidgetProps {
  * - 날짜 선택 시 URL 쿼리 파라미터 업데이트 (/?date=YYYY-MM-DD)
  * - URL 변경을 통해 페이지가 해당 날짜의 데이터를 로드
  */
-export function CalendarWidget({ selectedDate }: CalendarWidgetProps) {
+export function CalendarWidget({ selectedDate, basePath = "/planner" }: CalendarWidgetProps) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
 
@@ -33,7 +34,7 @@ export function CalendarWidget({ selectedDate }: CalendarWidgetProps) {
     const dateISO = formatDateToISO(date);
 
     // URL 업데이트하여 해당 날짜의 플래너 표시
-    router.push(`/?date=${dateISO}`);
+    router.push(`${basePath}?date=${dateISO}`);
     setOpen(false);
   };
 
@@ -42,7 +43,7 @@ export function CalendarWidget({ selectedDate }: CalendarWidgetProps) {
       <PopoverTrigger asChild>
         <Button
           variant="outline"
-          className="w-[240px] justify-start text-left font-normal"
+          className="justify-start rounded-lg bg-card text-left text-xs font-normal"
         >
           <CalendarIcon className="mr-2 h-4 w-4" />
           {format(selectedDate, "yyyy년 MM월 dd일")}

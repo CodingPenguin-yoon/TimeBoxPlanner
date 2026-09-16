@@ -4,6 +4,7 @@ export interface TimeboxItem {
   title: string;
   timeSpan: number;
   isBig3: boolean;
+  completed?: boolean;
   scheduledTime?: { startHour: number; startMinute: number };
 }
 export interface PlannerData {
@@ -33,4 +34,11 @@ export async function deletePlannerData(date: string, revision: number, ownerId:
 }
 export function createEmptyPlannerData(): PlannerData {
   return { tasks: [], todayTime: { notes: "", reflection: "" } };
+}
+
+export async function movePlannerTask(date: string, taskId: string, revision: number, ownerId: string): Promise<{ revision: number; targetDate: string }> {
+  return checked(await fetch("/api/planner/move", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ date, taskId, revision, ownerId }),
+  }));
 }

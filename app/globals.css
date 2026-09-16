@@ -48,24 +48,24 @@
 
 :root {
   --radius: 0.625rem;
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
+  --background: #f7f8f4;
+  --foreground: #283c34;
   --card: oklch(1 0 0);
   --card-foreground: oklch(0.145 0 0);
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
+  --primary: #365e4c;
   --primary-foreground: oklch(0.985 0 0);
   --secondary: oklch(0.97 0 0);
   --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
+  --muted: #eef1e9;
+  --muted-foreground: #68736b;
+  --accent: #eef3ec;
   --accent-foreground: oklch(0.205 0 0);
   --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
+  --border: #e3e8df;
   --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
+  --ring: #71917d;
   --chart-1: oklch(0.646 0.222 41.116);
   --chart-2: oklch(0.6 0.118 184.704);
   --chart-3: oklch(0.398 0.07 227.392);
@@ -122,4 +122,18 @@
   body {
     @apply bg-background text-foreground;
   }
+}
+
+@layer base {
+  body { font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif; }
+  button, select, input { accent-color: var(--primary); }
+  button:focus-visible, a:focus-visible { outline: 2px solid var(--ring); outline-offset: 4px; }
+}
+
+@layer base {
+  progress { appearance: none; overflow: hidden; border: 0; border-radius: 999px; background: var(--muted); color: var(--primary); }
+  progress::-webkit-progress-bar { background: var(--muted); border-radius: 999px; }
+  progress::-webkit-progress-value { background: var(--primary); border-radius: 999px; }
+  progress::-moz-progress-bar { background: var(--primary); border-radius: 999px; }
+  textarea { scroll-margin-top: 2rem; }
 }

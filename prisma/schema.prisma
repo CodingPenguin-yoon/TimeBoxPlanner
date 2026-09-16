@@ -80,6 +80,7 @@ model Task {
   title                String   @default("")
   timeSpan             Int      @default(30)
   isBig3               Boolean  @default(false)
+  completed            Boolean  @default(false)
   scheduledStartHour   Int?
   scheduledStartMinute Int?
   position             Int      @default(0)
