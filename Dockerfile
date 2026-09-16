@@ -27,6 +27,7 @@ COPY --from=builder --chown=nextjs:nodejs /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/node_modules ./node_modules
 COPY --from=builder --chown=nextjs:nodejs /app/prisma ./prisma
 COPY --from=builder --chown=nextjs:nodejs /app/scripts/runtime-env.mjs /app/scripts/start.mjs ./scripts/
+COPY --from=builder --chown=nextjs:nodejs /app/lib/database-url.mjs ./lib/
 # Entrypoint reads Heimdall 0400 secret files then drops to nextjs (UID/GID 1001).
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 CMD node -e "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"

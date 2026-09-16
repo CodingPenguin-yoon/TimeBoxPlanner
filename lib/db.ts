@@ -1,4 +1,5 @@
 import { PrismaClient } from "@prisma/client";
+import { databaseUrl } from "./database-url.mjs";
 
 /**
  * Prisma Client 인스턴스
@@ -11,6 +12,7 @@ const globalForPrisma = globalThis as unknown as {
 export const prisma =
   globalForPrisma.prisma ??
   new PrismaClient({
+    datasourceUrl: databaseUrl(),
     log: process.env.NODE_ENV === "development" ? ["error", "warn"] : ["error"],
   });
 

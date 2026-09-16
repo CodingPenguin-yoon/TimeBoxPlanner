@@ -4,6 +4,23 @@ import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { runtimeEnvironment } from "../scripts/runtime-env.mjs";
+import { databaseUrl } from "../lib/database-url.mjs";
+
+test("managed schema overrides stale public URL for both migrations and Prisma", () => {
+  const env = { DATABASE_URL: "postgresql://owner:secret@postgres/planner?schema=public&sslmode=require", DATABASE_SCHEMA: "project_app" };
+  const runtime = runtimeEnvironment(env);
+  assert.equal(runtime.DATABASE_URL, databaseUrl(env));
+  const url = new URL(runtime.DATABASE_URL!);
+  assert.equal(url.searchParams.get("schema"), "project_app");
+  assert.equal(url.searchParams.get("sslmode"), "require");
+  assert.equal(url.username, "owner");
+  assert.equal(url.pathname, "/planner");
+});
+
+test("managed DB never silently falls back to public when its schema is missing", () => {
+  assert.throws(() => databaseUrl({ DATABASE_HOST: "postgres", DATABASE_URL: "postgresql://postgres/planner" }), /DATABASE_SCHEMA/);
+  assert.equal(databaseUrl({}), undefined); // Build does not require DB credentials.
+});
 
 test("Heimdall DB and secret files become correctly escaped runtime variables", () => {
   const folder = mkdtempSync(join(tmpdir(), "timebox-env-"));

@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { databaseUrl } from "../lib/database-url.mjs";
 
 /** @param {Record<string, string | undefined>} source */
 export function runtimeEnvironment(source = process.env) {
@@ -19,8 +20,8 @@ export function runtimeEnvironment(source = process.env) {
     url.username = env.DATABASE_USER;
     url.password = password;
     url.pathname = `/${encodeURIComponent(env.DATABASE_NAME)}`;
-    url.searchParams.set("schema", env.DATABASE_SCHEMA || "public");
     env.DATABASE_URL = url.toString();
   }
+  env.DATABASE_URL = databaseUrl(env);
   return env;
 }
