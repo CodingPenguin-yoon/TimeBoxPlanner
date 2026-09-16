@@ -7,7 +7,10 @@ export function runtimeEnvironment(source = process.env) {
   // Heimdall SECRET variables contain mounted file paths, not secret values.
   for (const name of ["AUTH_SECRET", "AUTH_GOOGLE_ID", "AUTH_GOOGLE_SECRET"]) {
     const file = env[`${name}_FILE`] || (env[name]?.startsWith("/run/secrets/") ? env[name] : undefined);
-    if (file) env[name] = readFileSync(file, "utf8").trimEnd();
+    if (file) {
+      env[name] = readFileSync(file, "utf8").trimEnd();
+      delete env[`${name}_FILE`];
+    }
   }
   if (!env.DATABASE_URL && env.DATABASE_HOST) {
     for (const name of ["DATABASE_USER", "DATABASE_NAME", "DATABASE_PASSWORD_FILE"]) {

@@ -30,6 +30,6 @@ function run(args) {
     child.on("exit", (code) => resolve(code ?? 1));
   });
 }
-const migrated = await run(["node_modules/prisma/build/index.js", "migrate", "deploy"]);
+const migrated = await run(["scripts/migrate.mjs"]);
 if (migrated !== 0) process.exit(migrated);
 process.exit(await run(["server.js"]));
