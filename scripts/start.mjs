@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import { runtimeEnvironment } from "./runtime-env.mjs";
+import { resolveDatabaseEnvironment } from "./database-connection.mjs";
 
 let env;
 try {
@@ -20,6 +21,12 @@ if (process.platform === "linux" && process.getuid?.() === 0) {
   process.setgroups([]);
   process.setgid(1001);
   process.setuid(1001);
+}
+try {
+  env = await resolveDatabaseEnvironment(env);
+} catch (error) {
+  console.error("Database configuration invalid:", error.message);
+  process.exit(1);
 }
 let child;
 for (const signal of ["SIGTERM", "SIGINT"]) process.on(signal, () => child?.kill(signal));

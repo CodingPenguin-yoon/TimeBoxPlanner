@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { execFileSync } from "node:child_process";
 import { PrismaClient } from "@prisma/client";
 import { runMigrations } from "../../scripts/migrate.mjs";
+import { resolveDatabaseEnvironment } from "../../scripts/database-connection.mjs";
 
 const adminUrl = process.env.TEST_MIGRATION_ADMIN_URL;
 test("migration runner preserves Prisma history, serializes retries and rolls failed DDL back", { skip: !adminUrl }, async () => {
@@ -32,11 +33,21 @@ test("migration runner preserves Prisma history, serializes retries and rolls fa
       await admin.$executeRawUnsafe(`CREATE SCHEMA "${name}"`);
       await admin.$executeRawUnsafe(`GRANT USAGE, CREATE ON SCHEMA "${name}" TO "${role}"`);
     }
+    await admin.$executeRawUnsafe(`ALTER ROLE "${role}" IN DATABASE "timebox_test" SET search_path TO "${schema}", pg_catalog`);
+    const staleUrl = new URL(url);
+    staleUrl.searchParams.set("schema", "public");
+    const staleEnv = { DATABASE_URL: staleUrl.toString(), DATABASE_SCHEMA: "public" };
+    const resolved = await resolveDatabaseEnvironment(staleEnv, log);
+    assert.equal(resolved.DATABASE_SCHEMA, schema);
+    assert.equal(new URL(resolved.DATABASE_URL).searchParams.get("schema"), schema);
+    await assert.rejects(resolveDatabaseEnvironment({ ...env, DATABASE_SCHEMA: "missing_explicit_schema" }, log), /unavailable/);
     // Import a real ledger created by Prisma CLI, not a mock or fabricated baseline.
     execFileSync(process.execPath, ["node_modules/prisma/build/index.js", "migrate", "deploy"], {
       env: { ...process.env, ...env }, stdio: "pipe",
     });
-    assert.deepEqual(await runMigrations({ env, directory, log }), { applied: 0, existing: 1 });
+    assert.deepEqual(await runMigrations({ env: staleEnv, directory, log }), { applied: 0, existing: 1 });
+    const app = new PrismaClient({ datasourceUrl: resolved.DATABASE_URL });
+    try { assert.deepEqual(await app.account.findMany(), []); } finally { await app.$disconnect(); }
     const results = await Promise.all([
       runMigrations({ env: { ...env, DATABASE_SCHEMA: fresh }, directory, log }),
       runMigrations({ env: { ...env, DATABASE_SCHEMA: fresh }, directory, log }),

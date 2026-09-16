@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import pg from "pg";
 import { runtimeEnvironment } from "./runtime-env.mjs";
+import { resolveDatabaseEnvironment } from "./database-connection.mjs";
 
 const quote = (name) => `"${name.replaceAll('"', '""')}"`;
 
@@ -11,7 +12,7 @@ const quote = (name) => `"${name.replaceAll('"', '""')}"`;
  * @param {{env?: Record<string, string | undefined>, directory?: string, log?: (message: string) => void}} options
  */
 export async function runMigrations({ env = process.env, directory = resolve("prisma/migrations"), log = console.log } = {}) {
-  const configured = runtimeEnvironment(env);
+  const configured = await resolveDatabaseEnvironment(runtimeEnvironment(env), log);
   if (!configured.DATABASE_URL) throw new Error("DATABASE_URL is required");
   const url = new URL(configured.DATABASE_URL);
   const schema = url.searchParams.get("schema") || "public";

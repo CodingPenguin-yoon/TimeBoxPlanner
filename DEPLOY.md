@@ -16,7 +16,7 @@
 
 프로젝트 DB를 생성하고 상태가 `ACTIVE`인지 확인합니다. 배포마다 바뀌지 않는 HTTPS hostname을 설정하세요. OAuth는 이 주소를 기준으로 동작합니다. `main`에 코드를 push한 뒤 해당 commit으로 배포합니다.
 
-Heimdall은 `DATABASE_HOST`, `DATABASE_PORT`, `DATABASE_NAME`, `DATABASE_USER`, `DATABASE_SCHEMA`, `DATABASE_PASSWORD_FILE`을 주입합니다. `DATABASE_*`는 예약 변수이므로 직접 추가하지 않습니다. 시작 스크립트가 비밀번호 파일을 읽고 URL 인코딩하여 Prisma용 `DATABASE_URL`을 구성합니다. 마이그레이션과 앱의 Prisma Client 모두 `DATABASE_SCHEMA`를 우선 적용합니다. Managed DB에서 이 값이 없으면 시작을 중단하며 `public`으로 대체하지 않습니다.
+Heimdall은 `DATABASE_HOST`, `DATABASE_PORT`, `DATABASE_NAME`, `DATABASE_USER`, `DATABASE_SCHEMA`, `DATABASE_PASSWORD_FILE`을 주입합니다. `DATABASE_*`는 예약 변수이므로 직접 추가하지 않습니다. 시작 스크립트가 비밀번호 파일을 읽고 URL 인코딩하여 Prisma용 `DATABASE_URL`을 구성합니다. 마이그레이션과 앱의 Prisma Client 모두 `DATABASE_SCHEMA`를 우선 적용합니다. Managed DB에서 이 값이 없으면 시작을 중단합니다. 설정값이 `public`이고 해당 스키마 접근이 차단된 경우에 한해, DB 계정의 `current_schema()`가 별도의 애플리케이션 스키마이고 USAGE/CREATE 권한이 확인되면 이를 사용합니다. 확정된 스키마는 마이그레이션과 앱 서버에 동일하게 전달되며 시작 로그에 표시됩니다. 명시한 비공개 스키마가 잘못된 경우에는 다른 스키마로 대체하지 않습니다.
 
 ### 환경변수
 

@@ -26,7 +26,7 @@ COPY --from=builder --chown=nextjs:nodejs /app/public ./public
 # Include Prisma CLI and its complete dependencies for runtime migrations.
 COPY --from=builder --chown=nextjs:nodejs /app/node_modules ./node_modules
 COPY --from=builder --chown=nextjs:nodejs /app/prisma ./prisma
-COPY --from=builder --chown=nextjs:nodejs /app/scripts/runtime-env.mjs /app/scripts/start.mjs /app/scripts/migrate.mjs ./scripts/
+COPY --from=builder --chown=nextjs:nodejs /app/scripts/runtime-env.mjs /app/scripts/start.mjs /app/scripts/migrate.mjs /app/scripts/database-connection.mjs ./scripts/
 COPY --from=builder --chown=nextjs:nodejs /app/lib/database-url.mjs ./lib/
 # Entrypoint reads Heimdall 0400 secret files then drops to nextjs (UID/GID 1001).
 EXPOSE 3000
